@@ -263,6 +263,8 @@ interface LiquidGlassProps {
   overLight?: boolean
   mode?: "standard" | "polar" | "prominent" | "shader"
   onClick?: () => void
+  /** Use inline mode for flow-layout (cards, buttons). Removes the -50% transform centering. */
+  inline?: boolean
 }
 
 export default function LiquidGlass({
@@ -282,6 +284,7 @@ export default function LiquidGlass({
   style = {},
   mode = "standard",
   onClick,
+  inline = false,
 }: LiquidGlassProps) {
   const glassRef = useRef<HTMLDivElement>(null)
   const [isHovered, setIsHovered] = useState(false)
@@ -319,10 +322,9 @@ export default function LiquidGlass({
     [mouseContainer],
   )
 
-  // Set up mouse tracking if no external mouse position is provided
+  // Set up mouse tracking (skipped in inline mode — no transforms to drive)
   useEffect(() => {
-    if (externalGlobalMousePos && externalMouseOffset) {
-      // External mouse tracking is provided, don't set up internal tracking
+    if (inline || (externalGlobalMousePos && externalMouseOffset)) {
       return
     }
 
@@ -336,7 +338,7 @@ export default function LiquidGlass({
     return () => {
       container.removeEventListener("mousemove", handleMouseMove)
     }
-  }, [handleMouseMove, mouseContainer, externalGlobalMousePos, externalMouseOffset])
+  }, [inline, handleMouseMove, mouseContainer, externalGlobalMousePos, externalMouseOffset])
 
   // Calculate directional scaling based on mouse position
   const calculateDirectionalScale = useCallback(() => {
@@ -441,45 +443,56 @@ export default function LiquidGlass({
     return () => window.removeEventListener("resize", updateGlassSize)
   }, [])
 
-  const transformStyle = `translate(calc(-50% + ${calculateElasticTranslation().x}px), calc(-50% + ${calculateElasticTranslation().y}px)) ${isActive && Boolean(onClick) ? "scale(0.96)" : calculateDirectionalScale()}`
+  const elasticX = calculateElasticTranslation().x
+  const elasticY = calculateElasticTranslation().y
+
+  // Inline mode: no mouse-driven transforms — the card stays put in document flow
+  const transformStyle = inline
+    ? "none"
+    : `translate(calc(-50% + ${elasticX}px), calc(-50% + ${elasticY}px)) ${isActive && Boolean(onClick) ? "scale(0.96)" : calculateDirectionalScale()}`
 
   const baseStyle = {
     ...style,
-    transform: transformStyle,
-    transition: "all ease-out 0.2s",
+    ...(inline ? {} : { transform: transformStyle, transition: "all ease-out 0.2s" }),
   }
 
+  // Inline mode: extra layers are hidden, but keep clean defaults for the GlassContainer
+  const positionDefaults = inline ? { top: "0" as const, left: "0" as const } : { top: "50%" as const, left: "50%" as const }
   const positionStyles = {
-    position: baseStyle.position || "relative",
-    top: baseStyle.top || "50%",
-    left: baseStyle.left || "50%",
+    position: (baseStyle.position || "relative") as string,
+    top: baseStyle.top ?? positionDefaults.top,
+    left: baseStyle.left ?? positionDefaults.left,
   }
 
   return (
     <>
-      {/* Over light effect */}
-      <div
-        className={`bg-black transition-all duration-150 ease-in-out pointer-events-none ${overLight ? "opacity-20" : "opacity-0"}`}
-        style={{
-          ...positionStyles,
-          height: glassSize.height,
-          width: glassSize.width,
-          borderRadius: `${cornerRadius}px`,
-          transform: baseStyle.transform,
-          transition: baseStyle.transition,
-        }}
-      />
-      <div
-        className={`bg-black transition-all duration-150 ease-in-out pointer-events-none mix-blend-overlay ${overLight ? "opacity-100" : "opacity-0"}`}
-        style={{
-          ...positionStyles,
-          height: glassSize.height,
-          width: glassSize.width,
-          borderRadius: `${cornerRadius}px`,
-          transform: baseStyle.transform,
-          transition: baseStyle.transition,
-        }}
-      />
+      {/* Over light effect — fixed/absolute mode only */}
+      {!inline && (
+        <>
+          <div
+            className={`bg-black transition-all duration-150 ease-in-out pointer-events-none ${overLight ? "opacity-20" : "opacity-0"}`}
+            style={{
+              ...positionStyles,
+              height: glassSize.height,
+              width: glassSize.width,
+              borderRadius: `${cornerRadius}px`,
+              transform: baseStyle.transform,
+              transition: baseStyle.transition,
+            }}
+          />
+          <div
+            className={`bg-black transition-all duration-150 ease-in-out pointer-events-none mix-blend-overlay ${overLight ? "opacity-100" : "opacity-0"}`}
+            style={{
+              ...positionStyles,
+              height: glassSize.height,
+              width: glassSize.width,
+              borderRadius: `${cornerRadius}px`,
+              transform: baseStyle.transform,
+              transition: baseStyle.transition,
+            }}
+          />
+        </>
+      )}
 
       <GlassContainer
         ref={glassRef}
@@ -505,8 +518,10 @@ export default function LiquidGlass({
         {children}
       </GlassContainer>
 
-      {/* Border layer 1 - extracted from glass container */}
-      <span
+      {/* Border layers + hover effects — fixed/absolute mode only */}
+      {!inline && (
+        <>
+          <span
         style={{
           ...positionStyles,
           height: glassSize.height,
@@ -607,6 +622,8 @@ export default function LiquidGlass({
           />
         </>
       )}
+      {/* Close !inline guard for border layers + hover effects */}
+      </>)}
     </>
   )
 }
